@@ -82,7 +82,10 @@ def have_pattern_matching(func):
 
     code = compile(tree, func_file, 'single')
     # print(codegen.to_source(tree))
-    context = sys._getframe(2).f_locals
-    exec(code, context)
+    eval(code)
+    return locals()[func.__name__]
 
-    return context[func.__name__]
+    # context = sys._getframe(2).f_locals
+    # exec(code, context)
+    #
+    # return context[func.__name__]
