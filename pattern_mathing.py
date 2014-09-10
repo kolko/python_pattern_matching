@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
+import sys
 import ast
+import inspect
+# import codegen
 
 def walk_tree_and_patch(st):
     if is_pattern_mathing(st):
@@ -64,3 +67,22 @@ else:
         new_node.body += body
         new_node.orelse = orelse
         return new_node
+
+def have_pattern_matching(func):
+    '''Decorator for functions, containings pattern_matching'''
+
+    source = inspect.getsource(func)
+    func_file = getattr(sys.modules[func.__module__], '__file__', '<nofile>')
+    # func_file = '<string>'
+    tree = ast.parse(source, func_file, 'single')
+    pm_transformer = PatternMatchingTransformer()
+    tree = pm_transformer.visit(tree)
+
+    tree.body[0].decorator_list = [x for x in tree.body[0].decorator_list if x.attr != 'have_pattern_matching']
+
+    code = compile(tree, func_file, 'single')
+    # print(codegen.to_source(tree))
+    context = sys._getframe(2).f_locals
+    exec(code, context)
+
+    return context[func.__name__]
