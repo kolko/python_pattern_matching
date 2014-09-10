@@ -2,7 +2,7 @@
 import sys
 import ast
 import inspect
-# import codegen
+import codegen
 
 def walk_tree_and_patch(st):
     if is_pattern_mathing(st):
@@ -55,17 +55,26 @@ class PatternMatchingTransformer(ast.NodeTransformer):
         orelse = node.orelse
         mathed_variable = node.test.left
         args = node.test.right.args
-
-        test_1 = '(%s)' % ' and '.join(['((locals().get(\'%s\') and x[%s] == locals().get(\'%s\')) or not locals().get(\'%s\'))' % (var.id, n, var.id, var.id) for n, var in enumerate(args)])
-        payload = '\n    '.join(['if not locals().get(\'%s\'): %s = %s[%s]' % (var.id, var.id, mathed_variable.id, n) for n, var in enumerate(args) ])
-        code = '''if (%s):
+        #Если переменная назначена - выполнить сравнение
+        test_1 = '(%s)' % ' and '.join(['((locals().get(\'%s\') and %s[%s] == locals().get(\'%s\')) or not locals().get(\'%s\'))' % (var.id, mathed_variable.id, n, var.id, var.id) for n, var in enumerate(args) if isinstance(var, ast.Name)])
+        #если не переменная - сравнить
+        _test_2 = ' and '.join(['(%s == %s[%s])' % (codegen.to_source(var), mathed_variable.id, n) for n, var in enumerate(args) if not isinstance(var, ast.Name)])
+        if _test_2:
+            test_2 = 'and (%s)' % _test_2
+        else:
+            test_2 = ''
+        #назначить переменные
+        payload = '\n    '.join(['if not locals().get(\'%s\'): %s = %s[%s]' % (var.id, var.id, mathed_variable.id, n) for n, var in enumerate(args)  if isinstance(var, ast.Name)])
+        code = '''if (%s %s):
     %s
 else:
     pass
-''' % (test_1, payload)
+''' % (test_1, test_2, payload)
+        print(code)
         new_node = ast.parse(code).body[0]
         new_node.body += body
-        new_node.orelse = orelse
+
+        new_node.orelse = [self.visit(x) for x in orelse]
         return new_node
 
 def have_pattern_matching(func):
