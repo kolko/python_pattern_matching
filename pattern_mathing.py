@@ -73,9 +73,76 @@ else:
         print(code)
         new_node = ast.parse(code).body[0]
         new_node.body += body
-
         new_node.orelse = [self.visit(x) for x in orelse]
-        return new_node
+
+
+
+
+        ########new_node 2
+        ####test 1
+        #Если переменная назначена - выполнить сравнение
+        test1_item_code = "((locals().get('%(var_id)s') " \
+                          "and %(mathed_var)s[%(slice)s] == locals().get('%(var_id)s')) " \
+                          "or not locals().get('%(var_id)s'))"
+        test1_bolop_body_ast = [
+            ast.parse(
+                test1_item_code % {
+                            'var_id': var.id,
+                            'mathed_var': mathed_variable.id,
+                            'slice': n,
+                                    }
+            ) for n, var in enumerate(args)
+            if isinstance(var, ast.Name)
+        ]
+        test1_body_ast = ast.BoolOp(
+            op = ast.And(),
+            values = test1_bolop_body_ast,
+        )
+        ###test 2
+        #если не переменная - сравнить
+        test2_compare_items_ast = [
+            ast.Compare(
+                left = var,
+                ops = [ast.Eq()],
+                comparators = [ast.parse('%(mathed_var)s[%(slice)s]' % {
+                                                    'mathed_var': mathed_variable.id,
+                                                    'slice': n,
+                                                                       })],
+            ) for n, var in enumerate(args) if not isinstance(var, ast.Name)
+        ]
+        test2_body_ast = ast.BoolOp(
+            op = ast.And(),
+            values = test2_compare_items_ast,
+        )
+
+        all_test_ast = ast.BoolOp(
+            op = ast.And(),
+            values = [test1_body_ast, test2_body_ast],
+        )
+
+        #set unbound variables in if body payload
+        payload_item_code = "if not locals().get('%(var_id)s'): %(var_id)s = %(mathed_var)s[%(slice)s]"
+        payload_body_ast = [
+            ast.parse(
+                payload_item_code % {
+                            'var_id': var.id,
+                            'mathed_var': mathed_variable.id,
+                            'slice': n,
+                                    }
+            ) for n, var in enumerate(args)
+            if isinstance(var, ast.Name)
+        ]
+
+
+
+
+        new_node2 = ast.If(
+            body = payload_body_ast + body,
+            orelse = [self.visit(x) for x in orelse],
+            test = all_test_ast,
+        )
+
+        return new_node2
 
 def have_pattern_matching(func):
     '''Decorator for functions, containings pattern_matching'''
