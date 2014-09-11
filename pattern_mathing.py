@@ -70,7 +70,7 @@ class PatternMatchingTransformer(ast.NodeTransformer):
 else:
     pass
 ''' % (test_1, test_2, payload)
-        print(code)
+        # print(code)
         new_node = ast.parse(code).body[0]
         new_node.body += body
         new_node.orelse = [self.visit(x) for x in orelse]
@@ -81,6 +81,8 @@ else:
         ########new_node 2
         ####test 1
         #Если переменная назначена - выполнить сравнение
+        need_test1 = any([var for var in args
+                            if isinstance(var, ast.Name)])
         test1_item_code = "((locals().get('%(var_id)s') " \
                           "and %(mathed_var)s[%(slice)s] == locals().get('%(var_id)s')) " \
                           "or not locals().get('%(var_id)s'))"
@@ -91,15 +93,22 @@ else:
                             'mathed_var': mathed_variable.id,
                             'slice': n,
                                     }
-            ) for n, var in enumerate(args)
+            ).body[0].value for n, var in enumerate(args)
             if isinstance(var, ast.Name)
         ]
-        test1_body_ast = ast.BoolOp(
-            op = ast.And(),
-            values = test1_bolop_body_ast,
-        )
+        if len(test1_bolop_body_ast) > 1:
+            test1_body_ast = ast.BoolOp(
+                op = ast.And(),
+                values = test1_bolop_body_ast,
+            )
+        elif len(test1_bolop_body_ast) == 1:
+            test1_body_ast = test1_bolop_body_ast[0]
+        else:
+            need_test1 = False
         ###test 2
         #если не переменная - сравнить
+        need_test2 = any([var for var in args
+                    if not isinstance(var, ast.Name)])
         test2_compare_items_ast = [
             ast.Compare(
                 left = var,
@@ -107,18 +116,32 @@ else:
                 comparators = [ast.parse('%(mathed_var)s[%(slice)s]' % {
                                                     'mathed_var': mathed_variable.id,
                                                     'slice': n,
-                                                                       })],
+                                                                       }).body[0].value]
             ) for n, var in enumerate(args) if not isinstance(var, ast.Name)
         ]
-        test2_body_ast = ast.BoolOp(
-            op = ast.And(),
-            values = test2_compare_items_ast,
-        )
+        if len(test2_compare_items_ast) > 1:
+            test2_body_ast = ast.BoolOp(
+                op = ast.And(),
+                values = test2_compare_items_ast
+            )
+        elif len(test2_compare_items_ast) == 1:
+            test2_body_ast = test2_compare_items_ast[0]
+        else:
+            need_test2 = False
 
-        all_test_ast = ast.BoolOp(
-            op = ast.And(),
-            values = [test1_body_ast, test2_body_ast],
-        )
+        all_test_list = []
+        if need_test1:
+            all_test_list.append(test1_body_ast)
+        if need_test2:
+            all_test_list.append(test2_body_ast)
+
+        if len(all_test_list) > 1:
+            all_test_ast = ast.BoolOp(
+                op = ast.And(),
+                values = all_test_list
+            )
+        else:
+            all_test_ast = all_test_list[0]
 
         #set unbound variables in if body payload
         payload_item_code = "if not locals().get('%(var_id)s'): %(var_id)s = %(mathed_var)s[%(slice)s]"
@@ -129,18 +152,27 @@ else:
                             'mathed_var': mathed_variable.id,
                             'slice': n,
                                     }
-            ) for n, var in enumerate(args)
+            ).body[0] for n, var in enumerate(args)
             if isinstance(var, ast.Name)
         ]
-
-
 
 
         new_node2 = ast.If(
             body = payload_body_ast + body,
             orelse = [self.visit(x) for x in orelse],
-            test = all_test_ast,
+            test = all_test_ast
         )
+
+        new_node2 = ast.fix_missing_locations(new_node2)
+
+        # print(codegen.to_source(new_node))
+        # print(codegen.to_source(new_node2))
+        #
+        # print()
+        # print()
+        # print(ast.dump(new_node))
+        # print()
+        # print(ast.dump(new_node2))
 
         return new_node2
 
@@ -150,11 +182,14 @@ def have_pattern_matching(func):
     source = inspect.getsource(func)
     func_file = getattr(sys.modules[func.__module__], '__file__', '<nofile>')
     # func_file = '<string>'
+    # func_file = '<ast>'
     tree = ast.parse(source, func_file, 'single')
     pm_transformer = PatternMatchingTransformer()
     tree = pm_transformer.visit(tree)
 
     tree.body[0].decorator_list = [x for x in tree.body[0].decorator_list if x.attr != 'have_pattern_matching']
+
+    # tree = ast.fix_missing_locations(tree)
 
     code = compile(tree, func_file, 'single')
     # print(codegen.to_source(tree))

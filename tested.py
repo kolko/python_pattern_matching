@@ -30,8 +30,8 @@ def test2(x):
     elif x | mathed ('abc', z):
         return z+'2'
     else:
-        return 'Not mached'
+        return 'Not mached!'
 
 assert test2(['xyz', 'passed']) == 'passed'
 assert test2(['abc', 'passed']) == 'passed2'
-assert test2(['xyz1', 'not passed']) == 'Not mached'
+assert test2(['xyz1', 'not passed']) == 'Not mached!'
